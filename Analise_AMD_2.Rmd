@@ -1,0 +1,3478 @@
+---
+title: "Caracteristicas Fenotipicas AMD"
+author: "Adela"
+date: "12/05/2021"
+output:  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, instalar, include=FALSE, message=FALSE,warning=F}
+library(reshape)
+library(readxl)
+library(ggplot2)
+library(knitr)
+library(rcompanion)
+library(kableExtra)
+library(DT)
+library("dplyr")
+library(pROC)
+library(car)
+library(tidyverse)
+library(flextable)
+library(dlookr)
+library(forecast)
+library(tidyverse)
+library(dlookr)
+library(forecast)
+
+```
+
+
+# Importar a base de dados e adicionar as variaveis Choroidal thikness e variantes raras
+```{r,echo=FALSE, message=F,include=T,warning=F}
+setwd("D:/Mestrado/Estagio/Bases para trabalho")
+
+## Base de dados inicial
+data_18022021_trab <- read_excel("data_26022021_trab.xlsx")
+
+## Base de dados da variavel dependente portador ou nao portador de variantes raras
+CFH_carriers_CFH_20042021_1_ <- read_excel("CFH_carriers_CFH_20042021 (1).xlsx")
+
+## Base de dados com variavel choroidal thicness
+data_choroid_1102021_incidence_CVF <- read_excel("data_choroid_1102021_incidence_CVF.xlsx")
+
+## base de dados com CNV and GA olho direito
+CNV_OD <- read_excel("lateAMD_GA_CNV_20210112_CVF.xlsx")
+
+## base de dados com CNV and GA do olho esquerdo
+CNV_OS <- read_excel("lateAMD_GA_CNV_20210112_CVF.xlsx", 
+    sheet = "OS")
+
+
+
+# adicionar as variantes raras
+data_join1=left_join(data_18022021_trab,CFH_carriers_CFH_20042021_1_,by="EyeriskID")
+
+# adicionar as variaveis choroidal thikness
+data_join2=left_join(data_join1,data_choroid_1102021_incidence_CVF[,c(1,2,4)], 
+                     by="StudySubjectID")
+
+# adicionar variavel de CNV OD
+dat_join3=left_join(data_join2,CNV_OD[,c(1,7)], 
+                    by="StudySubjectID")
+
+colnames(dat_join3)[549]<-'CNV_OD'
+
+# adicionar variavel de CNV GA
+dat_join4=left_join(dat_join3,CNV_OS[,c(1,7)], 
+                    by="StudySubjectID")
+
+colnames(dat_join4)[550]<-'CNV_OS'
+
+
+
+####################### Exportar 3 colunas para xcel ############################
+#join_EyeriskID=left_join(data_18022021_trab[,2],CFH_carriers_CFH_20042021_1_,by="EyeriskID")
+
+# exportar base de dados em excel
+#write.table(join_EyeriskID, file='arquivo.csv', sep=';', dec=',', row.names=FALSE)
+#########################################################################################
+
+data=dat_join4[,-2] # eliminei cvariavel EyeRiskID
+
+table(data$carrier) # 25 NAs
+
+diagnose(data) %>% flextable()
+```
+
+
+```{r,echo=FALSE, message=F,include=F,warning=F}
+
+# variavel sujeito em fator
+data$StudySubjectID=factor(data$StudySubjectID)
+
+data=as.data.frame(data)
+```
+
+
+```{r,echo=FALSE, message=F,include=F,warning=F}
+
+# criar uma variável CNV com “yes” para  todos os olhos com CNV e “no” todos os que não tenham no mesmo ficheiro, para olho direito
+data$CNV_OD[is.na(data$CNV_OD)] = "No"
+
+data$CNV_OD[data$CNV_OD=="GA"] = "No"
+
+data$CNV_OD[data$CNV_OD=="CNV"] = "Yes"
+
+# criar uma variável CNV com “yes” para  todos os olhos com CNV e “no” todos os que não tenham no mesmo ficheiro, para olho esquerdo
+data$CNV_OS[is.na(data$CNV_OS)] = "No"
+
+data$CNV_OS[data$CNV_OS=="GA"] = "No"
+
+data$CNV_OS[data$CNV_OS=="CNV"] = "Yes"
+
+table(data$CNV_OD)
+table(data$CNV_OS)
+```
+
+# Calcular area total de drusen inner circle (sf2+sf3+sf4+sf5) e outer circle (sf6+sf7+sf8+sf9)
+```{r,echo=FALSE, message=F,warning=F,include=F}
+str(data$s_Drus_sf2_Total_Area_1RE)
+
+data$inner_circle_OD = (data$s_Drus_sf2_Total_Area_1RE + 
+                        data$s_Drus_sf3_Total_Area_1RE + 
+                        data$s_Drus_sf4_Total_Area_1RE + 
+                        data$s_Drus_sf5_Total_Area_1RE)
+
+
+data$inner_circle_OS = (data$s_Drus_sf2_Total_Area_1LE +
+                        data$s_Drus_sf3_Total_Area_1LE +
+                        data$s_Drus_sf4_Total_Area_1LE +
+                        data$s_Drus_sf5_Total_Area_1LE)
+
+
+
+data$outer_circle_OD = (data$s_Drus_sf6_Total_Area_1RE + 
+                          data$s_Drus_sf7_Total_Area_1RE + 
+                          data$s_Drus_sf8_Total_Area_1RE + 
+                          data$s_Drus_sf9_Total_Area_1RE)
+
+
+data$outer_circle_OS = (data$s_Drus_sf6_Total_Area_1LE + 
+                          data$s_Drus_sf7_Total_Area_1LE +
+                          data$s_Drus_sf8_Total_Area_1LE + 
+                          data$s_Drus_sf9_Total_Area_1LE)
+```
+
+
+# calcular ICC
+```{r,echo=FALSE, message=F,warning=F}
+library("irr")
+
+#ICC Choroidal thicness
+a=icc(
+  data[,c(546,547)], model = "twoway", 
+  type = "agreement", unit = "single"
+  )
+a
+
+
+#ICC faf total area
+b=icc(
+  data[,c(22,23)], model = "twoway", 
+  type = "agreement", unit = "single"
+  )
+b
+
+# area central subfield
+c=icc(
+  data[,c(201,388)], model = "twoway", 
+  type = "agreement", unit = "single"
+  )
+c
+
+# inner subfield
+d=icc(
+  data[,c(550,551)], model = "twoway", 
+  type = "agreement", unit = "single"
+  )
+d
+
+#outer subfield
+e=icc(
+  data[,c(552,553)], model = "twoway", 
+  type = "agreement", unit = "single"
+  )
+e
+ #install.packages("psych")
+library(psych)
+
+# ICC choroidal
+a1=ICC(data[,c(546,547)],missing=TRUE,alpha=.05,lmer=TRUE,check.keys=FALSE)
+
+a1
+
+# faf_total_area
+b1=ICC(data[,c(22,23)],missing=TRUE,alpha=.05,lmer=TRUE,check.keys=FALSE)
+b1
+
+
+# central subfield
+c1=ICC(data[,c(201,388)],missing=TRUE,alpha=.05,lmer=TRUE,check.keys=FALSE)
+c1
+
+# inner subfield
+d1= ICC(data[,c(550,551)],missing=TRUE,alpha=.05,lmer=TRUE,check.keys=FALSE)
+
+d1
+
+# outer subfield
+e1= ICC(data[,c(552,553)],missing=TRUE,alpha=.05,lmer=TRUE,check.keys=FALSE)
+
+e1
+```
+
+
+# Transformar para modelo long (Converter o database para long, uma linha por olho )
+## Atenção sempre que adicionar mais variaveis tem que organizar a base de dados tendo primeiro as variaveis do olho direito e depois o olho esquerdo
+```{r,echo=FALSE, message=F,warning=F,include=F}
+
+data1 = data[,-c(148:207,209:387,389:544)] # Eliminar variaveis que nao se inclui na analise
+
+str(data1)
+
+#### ATENÇÂO sempre temos que organizar as variaveis pelo olho direito em primeiro depois o olho esquerdo ############## ATENÇÂO ###############
+
+data1a=data1[,c(1:39,51:61,73:83,100:116,118,126:132,140:146,149,40:50,62:72,84:99,117,
+               119:125,133:139,147,148,150:158)]
+
+data1a=as.data.frame(data1a)
+names(data1a)<-names(data1a)
+
+nobs <- nrow(data1a) #nr of observations
+
+
+v <- c("Choroidal_Thickness_Cente","spherical_equivalent_",'ASMULTIMODALORRES_O',
+       "faf_atro_present","faf_retdr_present",
+       "faf_retdr_total_area", "ir_retic_dr_present", "reti_t_c_sub",
+       "reti_patho_dr_o","reti_patho_dr_d_w_c","reti_patho_re_dr",
+       "reti_patho_ped","reti_patho_hyp_c_ret","phen_exsu_amd","morph_0","morph_1",
+       "morph_2","morph_3","morph_4","morph_5_","morph_5a","morph_5b","morph_5c",
+       "morph_7","morph_8","predominant_0","predominant_0","predominant_1","predominant_2",
+       "predominant_3","predominant_4","predominant_5_","predominant_5a",
+       "predominant_5b","predominant_5c","predominant_7","predominant_8","main_loc_1",
+       "main_loc_2","main_loc_3","main_loc_4_","main_loc_4a","main_loc_4b","main_loc_7",                          "main_loc_8","main_loc_pig_1","main_loc_pig_2","main_loc_pig_3",
+       "main_loc_pig_4_","main_loc_pig_4a","main_loc_pig_4b","main_loc_pig_7",
+       "main_loc_pig_8","main_loc_O_","main_loc_pig_O_","hyperpig_0","hyperpig_1",
+       "hyperpig_2","hyperpig_3","hyperpig_7","hyperpig_8","hyperpig_O_","hypopig_0",
+       "hypopig_1","hypopig_2","hypopig_3","hypopig_7","hypopig_8","hypopig_O_",
+       "s_Drus_sf1_Total_Area_1", "inner_circle","outer_circle_","CNV")
+
+
+
+varying1 = sapply(v, grep, names(data1a))
+
+#wide format to a long format
+data2 <- reshape(data1a, idvar = "StudySubjectID", varying = t(varying1),
+                 v.names = v ,direction = "long",
+                 timevar = 'olho')
+
+
+#IMPORTANT: note that the gee function assumes the rows of the data.frame mydata1_long1 to be ordered with respect to subjects
+subset(data2,StudySubjectID %in% c("1","2"))
+osub <- order(as.integer(data2$StudySubjectID))
+data2 <- data2[osub,]
+str(data2)
+
+table(data2$olho)
+
+diagnose(data2) %>% flextable()
+```
+
+
+# Filtrar a base de dados (	Filtrar os olhos que não têm doença)
+```{r,echo=FALSE, message=F,include=F,warning=F}
+
+
+data3=data2[data2$ASMULTIMODALORRES_O=="2a"|data2$ASMULTIMODALORRES_O=="2b"|
+      data2$ASMULTIMODALORRES_O=="3"|data2$ASMULTIMODALORRES_O=="4",]
+
+
+data4<- data3[!is.na(data3$ASMULTIMODALORRES_O),]
+
+diagnose(data4) %>% flextable()
+```
+
+
+# Gerar uma variável de reticular drusen conjunta (FAF + IR + CFP)
+```{r,echo=FALSE, message=F,warning=F,include=F}
+table(data4$faf_retdr_present,data4$ir_retic_dr_present,data4$reti_patho_re_dr)
+
+sum(table(data4$ir_retic_dr_present,data4$reti_patho_re_dr))
+
+sum(table(data4$reti_patho_re_dr,data4$faf_retdr_present))
+
+data4$present_drusen=ifelse(data4$faf_retdr_present=="Yes"|data4$ir_retic_dr_present=="Yes"|
+                data4$reti_patho_re_dr=="Yes","Yes","No")
+
+
+table(data4$present_drusen)
+
+```
+
+
+#Eliminar as observaçoes a vermelho da Base de dados data_choroid_1102021_incidence_CVF ordem da Dra Claudia
+```{r,echo=FALSE, message=F,warning=F,include=F}
+
+data5 <- data4[!data4$StudySubjectID== "109011882",]
+  
+             
+data5= data5[!(data5$StudySubjectID=="109011997" & data5$olho=="2"), ]
+
+#data5$StudySubjectID=="109011997" & data5$Olho=="OS"
+
+table(data5$olho)
+```
+
+
+# olhos cujo spherical equivalente sai dos limites identificados entre "-6 & 3" ordem Dra. do estudo
+```{r,echo=FALSE, message=F,warning=F,include=F}
+#  data5$spherical_equivalent_
+
+data6= data5[(data5$spherical_equivalent_>= -6 &    data5$spherical_equivalent_<=3)|is.na(data5$spherical_equivalent_), ]
+
+
+# Alternativa do codigo acima
+#data8=subset(data5,spherical_equivalent_>=-6 & #data5$spherical_equivalent_<=3|is.na(data5$spherical_equivalent_))
+
+
+#length(data6$spherical_equivalent_>=-6 & data6$spherical_equivalent_<=3)
+
+
+
+#data6<- data6[!is.na(data6$spherical_equivalent_),] # em caso de remover os NA
+
+diagnose(data6) %>% flextable()
+```
+
+
+#trabalhar as variaveis Retmarker 
+```{r,echo=FALSE, message=F,warning=F,include=F}
+# Morphological: a.Morphology- construir novas variáveis para cada uma das categorias absent, hard drusen, intermediate drusen and large, soft drusen (juntar numa só categorias 4 e 5 ) porque podem coexistir
+
+
+#table(data6$morph_0,data6$morph_2)
+#table(data6$morph_0,data6$morph_3)
+#table(data6$morph_0,data6$morph_4)
+#table(data6$morph_0,data6$morph_5_)
+
+#table(data6$morph_4,data6$morph_5_) #Temos um individuo como NA 
+
+
+data6$morph_large=ifelse(data6$morph_4=="1"|data6$morph_5_=="1","1","0")
+
+table(data6$morph_0) # morphology absent
+
+table(data6$morph_2) # morphology hard drusen
+
+table(data6$morph_3) # morphology intermediate
+
+table(data6$morph_large) 
+
+```
+
+
+```{r,echo=FALSE, message=F,warning=F,include=F}
+################################ PREDOMINANTE ##################################
+
+#Predominante:	Predominant – absent, hard drusen, intermediate drusen and large, soft drusen (juntar numa só categorias 4 e 5 )
+
+#table(data6$predominant_0,data6$predominant_2)
+#table(data6$predominant_0,data6$predominant_3)
+#table(data6$predominant_0,data6$predominant_4)
+#table(data6$predominant_0,data6$predominant_5_)
+
+
+#table(data6$predominant_4,data6$predominant_5_)
+
+data6$predominante_large=ifelse(data6$predominant_4=="1"|data6$predominant_5_=="1","1","0")
+
+table(data6$predominant_0)# predominant absent
+table(data6$predominant_2) # predominant hard drusen
+table(data6$predominant_3) # predominant intermediate
+table(data6$predominante_large) # predominant large
+
+```
+
+```{r,echo=FALSE, message=F,warning=F,include=F}
+################# Hyperpigmentation and Hypopigmentation #######################
+
+# Hyperpigmentation: d.	Hyperpigmentation – absent or present (juntar numa só categorias 2 e 3)
+
+
+#table(data6$hyperpig_2,data6$hyperpig_3)
+
+data6$hyperpig_present=ifelse(data6$hyperpig_2=="1"|data6$hyperpig_3=="1","1","0")
+
+table(data6$hyperpig_present)
+
+#Hypopigmentation: e.	Hypopigmentation – absent or present (juntar numa só categorias 2 e 3)
+
+#table(data6$hypopig_2,data6$hypopig_3)
+
+data6$hypopig_present=ifelse(data6$hypopig_2=="1"|data6$hypopig_3=="1","1","0")
+
+table(data6$hypopig_present)
+
+```
+
+# Organizar a base de dados
+````{r,echo=FALSE,message=FALSE,warning=F,include=F}
+
+data6$sex_E1_C1<-as.factor(data6$sex_E1_C1) 
+data6$sex_E1_C1 <- relevel(data6$sex_E1_C1, ref = "Male")
+
+data6$race_E1_C1=as.factor(data6$race_E1_C1)
+#data6$race_E1_C1=relevel(data6$race_E1_C1, ref = "Caucasian")
+
+data6$ls_smoker_E1_C6=as.factor(data6$ls_smoker_E1_C6)
+table(data6$ls_smoker_E1_C6)
+data6$ls_smoker_E1_C6=relevel(data6$ls_smoker_E1_C6, ref = "Non-smoker")
+
+
+data6$fam_history_amd_E1_C1=as.factor(data6$fam_history_amd_E1_C1)
+table(data6$fam_history_amd_E1_C1)
+data6$fam_history_amd_E1_C1=relevel(data6$fam_history_amd_E1_C1, ref = "No")
+
+data6$diabetes_E1_C3=as.factor(data6$diabetes_E1_C3)
+#levels(diabetes_E1_C3) = c("Doesn't know","No","Yes")
+table(data6$diabetes_E1_C3)
+data6$diabetes_E1_C3=relevel(data6$diabetes_E1_C3, ref = "No")
+
+data6$arterial_hypertension_E1_C3=as.factor(data6$arterial_hypertension_E1_C3)
+#levels(arterial_hypertension_E1_C3) = c("No","Doesn't know","Yes")
+table(data6$arterial_hypertension_E1_C3)
+data6$arterial_hypertension_E1_C3=relevel(data6$arterial_hypertension_E1_C3, ref = "No")
+
+data6$hypercholesterolaemia_E1_C3=as.factor(data6$hypercholesterolaemia_E1_C3)
+#levels(hypercholesterolaemia_E1_C3) = c("No","Doesn't know","Yes")
+table(data6$hypercholesterolaemia_E1_C3)
+data6$hypercholesterolaemia_E1_C3=relevel(data6$hypercholesterolaemia_E1_C3, ref = "No")
+
+data6$hyperlipidaemia_E1_C3=as.factor(data6$hyperlipidaemia_E1_C3)
+#levels(hyperlipidaemia_E1_C3) = c("No","Doesn't know","Yes")
+table(data6$hyperlipidaemia_E1_C3)
+data6$hyperlipidaemia_E1_C3=relevel(data6$hyperlipidaemia_E1_C3, ref = "No")
+
+
+data6$menopause_reached_E1_C1[is.na(data6$menopause_reached_E1_C1)]="No"
+data6$menopause_reached_E1_C1=as.factor(data6$menopause_reached_E1_C1)
+table(data6$menopause_reached_E1_C1)
+data6$menopause_reached_E1_C1=relevel(data6$menopause_reached_E1_C1, ref = "No")
+
+data6$ASMULTIMODALORRES_E1_C18=as.factor(data6$ASMULTIMODALORRES_E1_C18)
+table(data6$ASMULTIMODALORRES_E1_C18)
+data6$ASMULTIMODALORRES_E1_C18=relevel(data6$ASMULTIMODALORRES_E1_C18, ref = "2a")
+
+data6$olho=as.factor(data6$olho)
+
+data6$ASMULTIMODALORRES_O=as.factor(data6$ASMULTIMODALORRES_O)
+table(data6$ASMULTIMODALORRES_O)
+data6$ASMULTIMODALORRES_O=relevel(data6$ASMULTIMODALORRES_O, ref = "2a")
+
+data6$present_drusen=as.factor(data6$present_drusen)
+table(data6$present_drusen)
+data6$present_drusen=relevel(data6$present_drusen, ref = "No")
+
+data6$morph_absente=as.factor(data6$morph_0)
+table(data6$morph_absente)
+data6$morph_absente=relevel(data6$morph_absente, ref = "1")
+
+data6$morph_hard_drusen=as.factor(data6$morph_2)
+table(data6$morph_hard_drusen)
+data6$morph_hard_drusen=relevel(data6$morph_hard_drusen,ref="0")
+
+data6$morph_intermed=as.factor(data6$morph_3)
+table(data6$morph_intermed)
+data6$morph_intermed=relevel(data6$morph_intermed, ref = "0")
+
+data6$morph_large=as.factor(data6$morph_large)
+table(data6$morph_large)
+data6$morph_large=relevel(data6$morph_large,ref = "0")
+
+data6$predominant_absente=as.factor(data6$predominant_0)
+table(data6$predominant_absente)
+data6$predominant_absente=relevel(data6$predominant_absente,ref = "1")
+
+data6$predominant_hard_drusen=as.factor(data6$predominant_2)
+table(data6$predominant_hard_drusen)
+data6$predominant_hard_drusen=relevel(data6$predominant_hard_drusen,ref = "0")
+
+data6$predominant_intermed=as.factor(data6$predominant_3)
+table(data6$predominant_intermed)
+data6$predominant_intermed=relevel(data6$predominant_intermed,ref = "0")
+
+data6$predominante_large=as.factor(data6$predominante_large)
+table(data6$predominante_large)
+data6$predominante_large=relevel(data6$predominante_large,ref="0")
+
+data6$hyperpig_present=as.factor(data6$hyperpig_present)
+table(data6$hyperpig_present)
+data6$hyperpig_present=relevel(data6$hyperpig_present,ref = "0")
+
+data6$hypopig_present=as.factor(data6$hypopig_present)
+table(data6$hypopig_present)
+data6$hypopig_present=relevel(data6$hypopig_present,ref="0")
+
+data6$main_loc_O_=as.factor(data6$main_loc_O_)
+table(data6$main_loc_O_)
+
+data6$main_loc_1=as.factor(data6$main_loc_1)
+table(data6$main_loc_1)
+
+
+data6$main_loc_2=as.factor(data6$main_loc_2)
+table(data6$main_loc_2)
+data6$main_loc_2=relevel(data6$main_loc_2,ref = "0")
+
+data6$main_loc_3=as.factor(data6$main_loc_3)
+table(data6$main_loc_3)
+data6$main_loc_3=relevel(data6$main_loc_3,ref = "0")
+
+data6$main_loc_4_=as.factor(data6$main_loc_4_)
+table(data6$main_loc_4_)
+data6$main_loc_4_=relevel(data6$main_loc_4_,ref="0")
+
+data6$main_loc_4a=as.factor(data6$main_loc_4a)
+table(data6$main_loc_4a)
+
+data6$main_loc_4b=as.factor(data6$main_loc_4b)
+table(data6$main_loc_4b)
+
+data6$main_loc_7=as.factor(data6$main_loc_7)
+data6$main_loc_8=as.factor(data6$main_loc_8)
+
+data6$faf_retdr_total_area=as.numeric(data6$faf_retdr_total_area)
+
+```
+
+
+#"1 sujeito" (individuo para eliminar ordens da DRA. do estudo - tem distrofia padronizada)
+
+# Eliminar a observação do sujeito referido e os NAs da variav dependente
+
+# Selecionar variaveis para o nosso estudo
+````{r,echo=FALSE,message=FALSE,warning=F,include=F}
+
+#Eliminar as observações com NAs da variv dependente
+
+data7 <- data6[!is.na(data6$carrier),]
+
+# Eliminar a observação que tem NAs em todas os exames
+data7 <- data7[!data7$StudySubjectID== "109011946",]
+
+data7$carrierFact=data7$carrier
+
+data7$carrierFact=as.factor(data7$carrierFact)
+
+data7 =data7 %>% 
+  select( StudySubjectID, age , sex_E1_C1,
+          race_E1_C1,ls_smoker_E1_C6, fam_history_amd_E1_C1,
+          diabetes_E1_C3, arterial_hypertension_E1_C3, 
+          hypercholesterolaemia_E1_C3,hyperlipidaemia_E1_C3,
+          menopause_reached_E1_C1, bmi_E1_C1, ASMULTIMODALORRES_E1_C18,
+          olho, Choroidal_Thickness_Cente, spherical_equivalent_ ,
+          ASMULTIMODALORRES_O,faf_atro_present, faf_retdr_total_area , 
+          reti_t_c_sub , reti_patho_dr_o ,reti_patho_dr_d_w_c, 
+          reti_patho_ped, reti_patho_hyp_c_ret, phen_exsu_amd, main_loc_1 ,
+          main_loc_2, main_loc_3, main_loc_4_, main_loc_4a, main_loc_4b,
+          s_Drus_sf1_Total_Area_1,inner_circle, outer_circle_, 
+          present_drusen, morph_absente, morph_hard_drusen,
+          morph_intermed, morph_large, predominant_absente, 
+          predominant_hard_drusen,predominant_intermed, predominante_large,
+          hyperpig_present, hypopig_present, carrier,carrierFact,CNV) 
+
+table(data7$carrierFact) # 34 olhos NAs na variavel dependente### 323 olhos 253 nao portadores e 70 portadores
+
+```
+
+
+# analise dados sociodemograficos por sujeito
+````{r,echo=FALSE,message=FALSE,warning=F,include=T}
+
+#base de dados por sujeito tirando os duplicados
+df3=data7[!duplicated(data7$StudySubjectID),c(2:14,47)]
+
+#df3 %>%
+#  eda_report(
+#    target="carrierFact",
+#    output_format="html"
+#  )
+
+
+```
+
+
+
+
+
+
+# regressao logistica para dados socio demograficas
+# no artigo guia nao fazem esta analize
+```{r,echo=FALSE, message=F, warning=F}
+#str(data6)
+
+modSD=glm(carrierFact~1+age+sex_E1_C1+race_E1_C1 +ls_smoker_E1_C6+
+            fam_history_amd_E1_C1+diabetes_E1_C3+arterial_hypertension_E1_C3
+          +hypercholesterolaemia_E1_C3+ hyperlipidaemia_E1_C3+menopause_reached_E1_C1 
+          +bmi_E1_C1 +ASMULTIMODALORRES_E1_C18, family = binomial(link = "logit"),
+          data = df3)
+
+summary(modSD)
+
+
+#Calcular OR
+exp(modSD$coefficients) 
+
+
+#95% IC for the coefficients
+exp(confint(modSD,level=0.95))
+
+```
+
+
+# Analisar a base de dados fenotipicos
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+library(forecast)
+
+#data7[,15:47] %>%
+#  eda_report(
+#    target="carrierFact",
+#    output_format="html"
+#  )
+
+#Ver o tipo de variaveis e o nr de Nas para cada variavel
+diagnose(data7[,15:48]) %>% flextable()
+
+```
+
+################## Substituir NAs #################
+
+# Ordens da Dra. do estudo após analisar os exames para variaveis com NAs, substituir com os caracteres sugeridos
+
+### Variavel faf_atro_present #####
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+#### Substituir os 7 NAs da variavel atrophy presence ###
+data7$faf_atro_present[is.na(data7$faf_atro_present) &
+                         data7$StudySubjectID=="109010088"]="No"
+
+data7$faf_atro_present[is.na(data7$faf_atro_present) & data7$StudySubjectID=="109010506" &
+                         data7$olho == "2"]="No"
+
+data7$faf_atro_present[is.na(data7$faf_atro_present) & data7$StudySubjectID=="109010506" &
+                         data7$olho == "1"]="Yes"
+
+data7$faf_atro_present[is.na(data7$faf_atro_present) & data7$StudySubjectID=="109010700" &
+                         data7$olho == "2"]="No"
+
+data7$faf_atro_present[is.na(data7$faf_atro_present) & 
+                         data7$StudySubjectID=="109010982"] = "No"
+
+data7$faf_atro_present[data7$faf_atro_present=="Questionable"] = "No"
+
+
+```
+
+### variavel faf_retdr_total_area
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+#### Substituir na variavel faf_retdr_total_area os Nas a 0.0 quando a variav Atrophy presence e No
+
+data7$faf_retdr_total_area[is.na(data7$faf_retdr_total_area) & 
+                         data7$faf_atro_present=="No"] = 0.0
+
+```
+
+### Variavel present_drusen
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+### Substituir 4 NAs da variavel present drusen (3 variav conjuntas), ordens da dra. Claudia os NAs passam a No #####
+## Suj. 109010700 LE == No/No
+## Suj. 109010088 LE/RE == No/No
+## Suj. 109011935 LE  == No
+
+data7$present_drusen[is.na(data7$present_drusen) & data7$StudySubjectID=="109010700" &
+                         data7$olho == "2"]="No"
+
+data7$present_drusen[is.na(data7$present_drusen) & data7$StudySubjectID=="109010088"]="No"
+
+data7$present_drusen[is.na(data7$present_drusen) & data7$StudySubjectID=="109011935" &
+                         data7$olho == "2"]="No"
+```
+
+### variavel reti_patho_dr_o ###
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+### Substituir 1 NAs da variavel present drusen OCT, ordens da dra. Claudia os NAs passam a Yes ##### e os Questionable passam a NO
+
+## Suj. 109011935 LE  == Yes
+
+data7$reti_patho_dr_o[is.na(data7$reti_patho_dr_o) & data7$StudySubjectID=="109011935" &
+                         data7$olho == "2"] = "Yes"
+
+
+data7$reti_patho_dr_o[data7$reti_patho_dr_o=="Questionable"] = "No"
+```
+
+### Variavel reti_patho_hyp_c_ret ###
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+### Substituir 1 NAs da variavel Hyperreflective clumps in the retina OCT, ordens da dra. Claudia os NAs passam a No ##### os questionaveis e Not applicable tambem passam a No
+
+## Suj. 109011935 LE  == No
+
+data7$reti_patho_hyp_c_ret[is.na(data7$reti_patho_hyp_c_ret) &
+                             data7$StudySubjectID=="109011935" &
+                             data7$olho == "2"] = "No"
+
+data7$reti_patho_hyp_c_ret[data7$reti_patho_hyp_c_ret=="Not applicable"] = "No"
+
+data7$reti_patho_hyp_c_ret[data7$reti_patho_hyp_c_ret=="Questionable"] = "No"
+
+```
+
+
+### variavel reti_patho_ped
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+
+# Na variav reti_patho_ped o NA Considera como nao tendo ped. e os Questionable tambem considerar No
+
+data7$reti_patho_ped[is.na(data7$reti_patho_ped) & 
+                       data7$StudySubjectID=="109011935" &
+                             data7$olho == "2"] = "No" 
+
+data7$reti_patho_ped[data7$reti_patho_ped=="Questionable"] = "No"
+
+```
+
+
+### Variavel phen_exsu_amd ###
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+### substituir os Na com Not applicable
+data7$phen_exsu_amd[is.na(data7$phen_exsu_amd) &
+                             data7$StudySubjectID=="109011935" &
+                             data7$olho == "2"] = "Not applicable"
+
+
+
+# Na variavel phen_exsu_amd_o há muitos niveis, pela indic. da Dra. Claudia foi formada uma variavel nova CNV e codificada em presença e ausencia de CNV
+
+data7 <- data7 %>% select(StudySubjectID, ASMULTIMODALORRES_O, olho, phen_exsu_amd, CNV,  
+                          everything ())
+
+data7$CNV=as.factor(data7$CNV)
+table(data7$CNV)
+data7$CNV=relevel(data7$CNV,ref="No")
+
+
+# alterar o nome da variavel AMD_ para CNV
+
+#colnames(data7)[5]<-'CNV' 
+
+#data7$AMD_[is.na(data7$AMD_)] = "No"
+
+#data7$AMD_[data7$AMD_=="GA"] = "No"
+
+#table(data7$CNV)
+
+diagnose(data7[,15:48]) %>% flextable()
+
+```
+
+
+#Analise apos imputação dos NAs
+```{r}
+data7[,1:48] %>%
+  eda_report(
+    target="carrierFact",
+    output_format="html"
+  )
+```
+
+
+
+## Analise Descritiva para variav Fenotipicas e ver associassao entre variav depend e independent #########
+
+## Choroidal Thicness ##
+
+```{r, echo=FALSE, message=F, warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(Choroidal_Thickness_Cente)),
+            `Valores Omissos`=sum(is.na(Choroidal_Thickness_Cente)),
+            `Média` = mean(Choroidal_Thickness_Cente, na.rm = T),
+            Mediana=median(Choroidal_Thickness_Cente, na.rm = T),
+            Quantil=quantile(Choroidal_Thickness_Cente,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(Choroidal_Thickness_Cente, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=Choroidal_Thickness_Cente))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="Choroidal_Thickness_Cente")+theme_bw()
+
+
+```
+
+
+
+```{r, echo=FALSE, message=F}
+shap1=shapiro.test(data7$Choroidal_Thickness_Cente[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$Choroidal_Thickness_Cente[data7$carrierFact=="0"])
+mann=wilcox.test(data7$Choroidal_Thickness_Cente[data7$carrierFact=="1"],
+            data7$Choroidal_Thickness_Cente[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$Choroidal_Thickness_Cente~data7$carrierFact)
+Ttest=t.test(data7$Choroidal_Thickness_Cente~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"Choroidal_Thickness_Cente"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+
+## spherical_equivalent ##
+```{r, echo=FALSE, message=F, warning=F}
+############################ Nao vai entrar ############################
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(spherical_equivalent_)),
+            `Valores Omissos`=sum(is.na(spherical_equivalent_)),
+            `Média` = mean(spherical_equivalent_, na.rm = T),
+            Mediana=median(spherical_equivalent_, na.rm = T),
+            Quantil=quantile(spherical_equivalent_,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(spherical_equivalent_, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=spherical_equivalent_))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="spherical_equivalent_")+theme_bw()
+
+
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+shap1=shapiro.test(data7$spherical_equivalent_[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$spherical_equivalent_[data7$carrierFact=="0"])
+mann=wilcox.test(data7$spherical_equivalent_[data7$carrierFact=="1"],
+            data7$spherical_equivalent_[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$spherical_equivalent_~data7$carrierFact)
+Ttest=t.test(data7$spherical_equivalent_~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"spherical_equivalent_"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+### ASMULTIMODALORRES_O ###
+```{r,echo=FALSE, message=F,warning=F}
+
+ggplot(data7,aes(x=ASMULTIMODALORRES_O,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="ASMULTIMODALORRES_O",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$ASMULTIMODALORRES_O)
+chisq=chisq.test(data7$carrierFact, data7$ASMULTIMODALORRES_O)
+fisher=fisher.test(data7$carrierFact, data7$ASMULTIMODALORRES_O)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação ###
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"ASMULTIMODALORRES_O"
+
+kable(table(data7$ASMULTIMODALORRES_O,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+##### faf_atro_present ####
+```{r,echo=FALSE, message=F,warning=F}
+
+ggplot(data7,aes(x=faf_atro_present,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="faf_atro_present",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$faf_atro_present)
+chisq=chisq.test(data7$carrierFact, data7$faf_atro_present)
+fisher=fisher.test(data7$carrierFact, data7$faf_atro_present)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"faf_atro_present"
+
+kable(table(data7$faf_atro_present,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+##### faf_retdr_total_area #####
+```{r,echo=FALSE, message=F,warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(faf_retdr_total_area)),
+            `Valores Omissos`=sum(is.na(faf_retdr_total_area)),
+            `Média` = mean(faf_retdr_total_area, na.rm = T),
+            Mediana=median(faf_retdr_total_area, na.rm = T),
+            Quantil=quantile(faf_retdr_total_area,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(faf_retdr_total_area, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=faf_retdr_total_area))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="faf_retdr_total_area")+theme_bw()
+
+
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+shap1=shapiro.test(data7$faf_retdr_total_area[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$faf_retdr_total_area[data7$carrierFact=="0"])
+mann=wilcox.test(data7$faf_retdr_total_area[data7$carrierFact=="1"],
+            data7$faf_retdr_total_area[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$faf_retdr_total_area~data7$carrierFact)
+Ttest=t.test(data7$faf_retdr_total_area~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"faf_retdr_total_area"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+
+## reti_t_c_sub ##
+
+```{r,echo=FALSE, message=F,warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(reti_t_c_sub)),
+            `Valores Omissos`=sum(is.na(reti_t_c_sub)),
+            `Média` = mean(reti_t_c_sub, na.rm = T),
+            Mediana=median(reti_t_c_sub, na.rm = T),
+            Quantil=quantile(reti_t_c_sub,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(reti_t_c_sub, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=reti_t_c_sub))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="reti_t_c_sub")+theme_bw()
+
+
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+shap1=shapiro.test(data7$reti_t_c_sub[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$reti_t_c_sub[data7$carrierFact=="0"])
+mann=wilcox.test(data7$reti_t_c_sub[data7$carrierFact=="1"],
+            data7$reti_t_c_sub[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$reti_t_c_sub~data7$carrierFact)
+Ttest=t.test(data7$reti_t_c_sub~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"reti_t_c_sub"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+################################ reti_patho_dr_o ##############################
+
+```{r,echo=FALSE, message=F,warning=F}
+
+ggplot(data7,aes(x=reti_patho_dr_o,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="reti_patho_dr_o",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$reti_patho_dr_o)
+chisq=chisq.test(data7$carrierFact, data7$reti_patho_dr_o)
+fisher=fisher.test(data7$carrierFact, data7$reti_patho_dr_o)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"reti_patho_dr_o"
+
+kable(table(data7$reti_patho_dr_o,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+##### reti_patho_dr_d_w_c ####
+```{r,echo=FALSE, message=F,warning=F}
+
+ggplot(data7,aes(x=reti_patho_dr_d_w_c,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="reti_patho_dr_d_w_c",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$reti_patho_dr_d_w_c)
+chisq=chisq.test(data7$carrierFact, data7$reti_patho_dr_d_w_c)
+fisher=fisher.test(data7$carrierFact, data7$reti_patho_dr_d_w_c)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"reti_patho_dr_d_w_c"
+
+kable(table(data7$reti_patho_dr_d_w_c,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+
+##### reti_patho_ped #####
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=reti_patho_ped,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="reti_patho_ped",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$reti_patho_ped)
+chisq=chisq.test(data7$carrierFact, data7$reti_patho_ped)
+fisher=fisher.test(data7$carrierFact, data7$reti_patho_ped)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"reti_patho_ped"
+
+kable(table(data7$reti_patho_ped,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+#### reti_patho_hyp_c_ret ####
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=reti_patho_hyp_c_ret,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="reti_patho_hyp_c_ret",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$reti_patho_hyp_c_ret)
+chisq=chisq.test(data7$carrierFact, data7$reti_patho_hyp_c_ret)
+fisher=fisher.test(data7$carrierFact, data7$reti_patho_hyp_c_ret)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"reti_patho_hyp_c_ret"
+
+kable(table(data7$reti_patho_hyp_c_ret,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+##### phen_exsu_amd ##### ( esta variavel é substituida pela CNV)
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=phen_exsu_amd,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="phen_exsu_amd",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$phen_exsu_amd)
+chisq=chisq.test(data7$carrierFact, data7$phen_exsu_amd)
+fisher=fisher.test(data7$carrierFact, data7$phen_exsu_amd)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r, echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"phen_exsu_amd"
+
+kable(table(data7$phen_exsu_amd,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+
+### main_loc_1 ###
+####### Esta variavel tem só 0 nao entramos #######
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_1,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_1",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+#VCramer=cramerV(data7$carrierFact, data7$main_loc_1)
+#chisq=chisq.test(data7$carrierFact, data7$main_loc_1)
+#fisher=fisher.test(data7$carrierFact, data7$main_loc_1)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+#table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de #Fisher`=fisher$p.value)
+#colnames(table)<-"main_loc_1"
+
+#kable(table(data7$main_loc_1,data7$carrierFact),align="l")%>%
+#  kable_styling(full_width = F,position = "float_left")
+#kable(table, align="l") %>%
+#  kable_styling(full_width = F,position = "left")
+```
+
+
+### main_loc_2 ###
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_2,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_2",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$main_loc_2)
+chisq=chisq.test(data7$carrierFact, data7$main_loc_2)
+fisher=fisher.test(data7$carrierFact, data7$main_loc_2)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r, echo=FALSE, message=F,warning=F,include=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"main_loc_2"
+
+kable(table(data7$main_loc_2,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+
+#### main_loc_3 ####
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_3,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_3",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$main_loc_3)
+chisq=chisq.test(data7$carrierFact, data7$main_loc_3)
+fisher=fisher.test(data7$carrierFact, data7$main_loc_3)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"main_loc_3"
+
+kable(table(data7$main_loc_3,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+
+##### main_loc_4_ #####
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_4_,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_4_",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$main_loc_4_)
+chisq=chisq.test(data7$carrierFact, data7$main_loc_4_)
+fisher=fisher.test(data7$carrierFact, data7$main_loc_4_)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"main_loc_4_"
+
+kable(table(data7$main_loc_4_,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+##### main_loc_4a ####
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_4a,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_4a",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r,echo=FALSE, message=F,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$main_loc_4a)
+chisq=chisq.test(data7$carrierFact, data7$main_loc_4a)
+fisher=fisher.test(data7$carrierFact, data7$main_loc_4a)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE, message=F,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"main_loc_4a"
+
+kable(table(data7$main_loc_4a,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+### main_loc_4b ###
+### variavel só com 0 ###
+
+```{r,echo=FALSE, message=F,warning=F}
+ggplot(data7,aes(x=main_loc_4b,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',
+            position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="main_loc_4b",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+
+  theme(axis.text.x = element_text(angle=90,hjust=1))+
+  theme_bw()
+```
+
+
+```{r, echo=F, message=FALSE,warning=F,include=F}
+#VCramer=cramerV(data7$carrierFact, data7$main_loc_4b)
+#chisq=chisq.test(data7$carrierFact, data7$main_loc_4b)
+#fisher=fisher.test(data7$carrierFact, data7$main_loc_4b)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=F, include=FALSE, message=FALSE,warning=F}
+#table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de #Fisher`=fisher$p.value)
+#colnames(table)<-"main_loc_4b"
+
+#kable(table(data7$main_loc_4b,data7$carrierFact),align="l")%>%
+#  kable_styling(full_width = F,position = "float_left")
+#kable(table, align="l") %>%
+#  kable_styling(full_width = F,position = "left")
+```
+
+
+### s_Drus_sf1_Total_Area_1_ ###
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(s_Drus_sf1_Total_Area_1)),
+            `Valores Omissos`=sum(is.na(s_Drus_sf1_Total_Area_1)),
+            `Média` = mean(s_Drus_sf1_Total_Area_1, na.rm = T),
+            Mediana=median(s_Drus_sf1_Total_Area_1, na.rm = T),
+            Quantil=quantile(s_Drus_sf1_Total_Area_1,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(s_Drus_sf1_Total_Area_1, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=s_Drus_sf1_Total_Area_1))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="s_Drus_sf1_Total_Area_1_")+theme_bw()
+
+
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+shap1=shapiro.test(data7$s_Drus_sf1_Total_Area_1[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$s_Drus_sf1_Total_Area_1[data7$carrierFact=="0"])
+mann=wilcox.test(data7$s_Drus_sf1_Total_Area_1[data7$carrierFact=="1"],
+            data7$s_Drus_sf1_Total_Area_1[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$s_Drus_sf1_Total_Area_1~data7$carrierFact)
+Ttest=t.test(data7$s_Drus_sf1_Total_Area_1~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"s_Drus_sf1_Total_Area_1"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+
+##### inner_circle ####
+
+```{r,echo=F, include=TRUE, message=FALSE,warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(inner_circle)),
+            `Valores Omissos`=sum(is.na(inner_circle)),
+            `Média` = mean(inner_circle, na.rm = T),
+            Mediana=median(inner_circle, na.rm = T),
+            Quantil=quantile(inner_circle,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(inner_circle, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=inner_circle))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="inner_circle")+theme_bw()
+
+
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+shap1=shapiro.test(data7$inner_circle[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$inner_circle[data7$carrierFact=="0"])
+mann=wilcox.test(data7$inner_circle[data7$carrierFact=="1"],
+            data7$inner_circle[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$inner_circle~data7$carrierFact)
+Ttest=t.test(data7$inner_circle~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"inner_circle"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+
+
+
+### outer_circle_ ####
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+
+df <- data7 %>%
+  group_by(carrierFact) %>%
+  summarise(`Não Omissos`=sum(!is.na(outer_circle_)),
+            `Valores Omissos`=sum(is.na(outer_circle_)),
+            `Média` = mean(outer_circle_, na.rm = T),
+            Mediana=median(outer_circle_, na.rm = T),
+            Quantil=quantile(outer_circle_,probs=c(0.25,0.75),na.rm = T),
+            SD=sd(outer_circle_, na.rm = T))
+
+kable(df,align="l")%>%
+  kable_styling(full_width = F)
+
+ggplot(data7,aes(x=carrierFact,y=outer_circle_))+
+  geom_boxplot(fill="lightblue3")+
+  labs(x="carrierFact",y="outer_circle_")+theme_bw()
+
+
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+shap1=shapiro.test(data7$outer_circle_[data7$carrierFact=="1"])
+shap0=shapiro.test(data7$outer_circle_[data7$carrierFact=="0"])
+mann=wilcox.test(data7$outer_circle_[data7$carrierFact=="1"],
+            data7$outer_circle_[data7$carrierFact=="0"],paired=F)
+bartl=bartlett.test(data7$outer_circle_~data7$carrierFact)
+Ttest=t.test(data7$outer_circle_~data7$carrierFact,var.equal=T)
+table=rbind(`Teste de Shapiro - carrierFact1`=shap1$p.value, `Teste de Shapiro - carrierFact0`=shap0$p.value,`Teste de Bartlet`=bartl$p.value,`Teste T`=Ttest$p.value,`Teste U de Mann-Whitney`=mann$p.value)
+colnames(table)<-"outer_circle_"
+kable(table,align="l")%>%
+  kable_styling(full_width = F)
+
+```
+
+
+
+### present_drusen ####
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=present_drusen,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="present_drusen",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$present_drusen)
+chisq=chisq.test(data7$carrierFact, data7$present_drusen)
+fisher=fisher.test(data7$carrierFact, data7$present_drusen)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"present_drusen"
+
+kable(table(data7$present_drusen,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+  
+  
+### morph_absente ####
+
+```{r,echo=F, include=TRUE, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=morph_absente,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="morph_absente",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$morph_absente)
+chisq=chisq.test(data7$carrierFact, data7$morph_absente)
+fisher=fisher.test(data7$carrierFact, data7$morph_absente)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"morph_absente"
+
+kable(table(data7$morph_absente,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+  
+    
+### morph_hard_drusen ###
+```{r,echo=F, include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=morph_hard_drusen,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="morph_hard_drusen",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=F, include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$morph_hard_drusen)
+chisq=chisq.test(data7$carrierFact, data7$morph_hard_drusen)
+fisher=fisher.test(data7$carrierFact, data7$morph_hard_drusen)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"morph_hard_drusen"
+
+kable(table(data7$morph_hard_drusen,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+ 
+ 
+### morph_intermed ###
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=morph_intermed,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="morph_intermed",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$morph_intermed)
+chisq=chisq.test(data7$carrierFact, data7$morph_intermed)
+fisher=fisher.test(data7$carrierFact, data7$morph_intermed)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"morph_intermed"
+
+kable(table(data7$morph_intermed,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+ 
+##### morph_large ####
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=morph_large,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="morph_large",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$morph_large)
+chisq=chisq.test(data7$carrierFact, data7$morph_large)
+fisher=fisher.test(data7$carrierFact, data7$morph_large)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=TRUE, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"morph_large"
+
+kable(table(data7$morph_large,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+ 
+ 
+#### predominant_absente ####
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=predominant_absente,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="predominant_absente",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$predominant_absente)
+chisq=chisq.test(data7$carrierFact, data7$predominant_absente)
+fisher=fisher.test(data7$carrierFact, data7$predominant_absente)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"predominant_absente"
+
+kable(table(data7$predominant_absente,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+ 
+### predominant_hard_drusen ###
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=predominant_hard_drusen,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="predominant_hard_drusen",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$predominant_hard_drusen)
+chisq=chisq.test(data7$carrierFact, data7$predominant_hard_drusen)
+fisher=fisher.test(data7$carrierFact, data7$predominant_hard_drusen)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"predominant_hard_drusen"
+
+kable(table(data7$predominant_hard_drusen,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+   
+   
+### predominant_intermed ###
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=predominant_intermed,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="predominant_intermed",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$predominant_intermed)
+chisq=chisq.test(data7$carrierFact, data7$predominant_intermed)
+fisher=fisher.test(data7$carrierFact, data7$predominant_intermed)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"predominant_intermed"
+
+kable(table(data7$predominant_intermed,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+#### predominante_large ####
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=predominante_large,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="predominante_large",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$predominante_large)
+chisq=chisq.test(data7$carrierFact, data7$predominante_large)
+fisher=fisher.test(data7$carrierFact, data7$predominante_large)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"predominante_large"
+
+kable(table(data7$predominante_large,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+
+### hyperpig_present ###
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=hyperpig_present,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="hyperpig_present",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$hyperpig_present)
+chisq=chisq.test(data7$carrierFact, data7$hyperpig_present)
+fisher=fisher.test(data7$carrierFact, data7$hyperpig_present)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"hyperpig_present"
+
+kable(table(data7$hyperpig_present,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+       
+
+##### hypopig_present #####
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+
+ggplot(data7,aes(x=hypopig_present,fill=carrierFact))+
+  geom_bar(position=position_dodge2(width = 0.9, preserve = "single"))+
+  geom_text(aes(label=..count..),stat='count',position=position_dodge2(width = 0.9, preserve = "single"),vjust=-0.2)+
+  labs(x="hypopig_present",fill="carrierFact")+
+  scale_fill_brewer(palette="Blues",na.value="grey")+theme_bw()
+```
+
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+VCramer=cramerV(data7$carrierFact, data7$hypopig_present)
+chisq=chisq.test(data7$carrierFact, data7$hypopig_present)
+fisher=fisher.test(data7$carrierFact, data7$hypopig_present)
+```
+
+
+#### Tabelas de Freqências e Testes de Associação
+
+```{r,echo=FALSE,include=T, message=FALSE,warning=F}
+table=rbind(VCramer, `Teste de Qui-Quad`=chisq$p.value,`Teste de Fisher`=fisher$p.value)
+colnames(table)<-"hypopig_present"
+
+kable(table(data7$hypopig_present,data7$carrierFact),align="l")%>%
+  kable_styling(full_width = F,position = "float_left")
+kable(table, align="l") %>%
+  kable_styling(full_width = F,position = "left")
+```
+
+
+# Análise Univariada Carrier #
+
+
+###### Aplicar GEE e GLMM #########
+
+########## variavel Choroidal #######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+library(gee)
+library(geepack)
+library(lme4)
+
+
+data7=as.data.frame(data7)
+
+### Unstructured 
+modUn<- gee(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="unstructured",na.action = na.omit)
+
+summary(modUn)
+
+
+### Exchangable (or Compund Symmetry)
+modEx= gee(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="exchangeable",na.action = na.omit)
+
+summary(modEx)
+
+## Independence
+modInd= gee(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(modInd)
+
+
+
+model1_1 <- geeglm(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + 
+                     ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+vif(model1_1)
+
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+model1_2=geeglm(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + 
+                     ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="exchangeable",na.action = na.omit)
+
+summary(model1_2)
+
+QIC(model1_2)
+
+model1_3=geeglm(carrier ~ Choroidal_Thickness_Cente + age + sex_E1_C1 + 
+                     ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="ar1",na.action = na.omit)
+
+summary(model1_3)
+
+QIC(model1_3)
+
+
+########### GLMM #############################################
+GLM = glmer(formula = carrier ~  Choroidal_Thickness_Cente + age + sex_E1_C1 + 
+                     ASMULTIMODALORRES_O  +
+                    (1 | StudySubjectID)+(1 | StudySubjectID:olho), 
+                    data = data7, family=binomial(link=logit),na.action =                     na.omit)
+ 
+summary(GLM)
+
+exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+####### Area de baixo da curva para modelo GLMM ########
+library(caret)
+
+#data7$pdata <- as.factor(
+#    ifelse(
+#        predict(GLM, 
+#                newdata = data7, 
+#                type = "response")
+#        >0.5,"1","0"))
+
+#confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+
+#roc1=plot.roc(as.factor(data7$carrier),fitted(GLM))
+
+#roc(data7$carrier,fitted(GLM), data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+#auc(carrier ~ fitted(GLM), data = data7)
+
+```
+
+#### Variavel Estado da doença por olho ######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+### Unstructured 
+table(data7$ASMULTIMODALORRES_O)
+
+modUn<- gee(carrier ~ ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="unstructured",na.action = na.omit)
+
+summary(modUn)
+
+### Exchangable (or Compund Symmetry)
+modEx= gee(carrier ~ ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="exchangeable",na.action = na.omit)
+
+summary(modEx)
+
+## Independence
+modInd= gee(carrier ~ ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(modInd)
+
+
+
+model1_1 <- geeglm(carrier ~ ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ ASMULTIMODALORRES_O + age + #sex_E1_C1 +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho), 
+ #                   data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM)
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+####### Area de baixo da curva para modelo GLMM ########
+#library(caret)
+
+#data7$pdata <- as.factor(
+#    ifelse(
+#        predict(GLM, 
+#                newdata = data7, 
+#                type = "response")
+#        >0.5,"1","0"))
+
+#confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+
+#roc1=plot.roc(as.factor(data7$carrier),fitted(GLM))
+
+#roc(data7$carrier,fitted(GLM), data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+```
+
+
+###### Spherical equivalent nao vai entrar por causa de NAs
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+################################ Variavel com muitos NAs ###################################
+
+
+#model1<- gee(variantes ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#            bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + spherical_equivalent_,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+# summary(model1)
+
+
+
+# model1_1 <- geeglm(variantes ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#            bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + spherical_equivalent_,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+# summary(model1_1)
+
+#odds ratio
+#exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+#cc <- exp(coef(summary(model1_1)))
+#citab <- with(as.data.frame(cc),
+#     cbind(lwr=Estimate-1.96*Std.err,
+#           upr=Estimate+1.96*Std.err))
+#rownames(citab) <- rownames(cc)
+#citab
+# #
+# ####### QIC #################
+# QIC(model1_1)
+#
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ age + sex_E1_C1  +
+#                  ASMULTIMODALORRES_E1_C18 + spherical_equivalent_  +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+# summary(GLM)
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+########################### modelo falha a convergencia ###############################
+
+
+```
+
+
+#### Variavel presença de atrophy #####
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+###### esta variavel tem o nivel can't grade que nao pode intrar na analise, Fazemos a analise eliminando estas observações (16 observações)
+
+data8 <- data7[!data7$faf_atro_present== "Can�t grade",]
+
+data8$faf_atro_present=as.factor(data8$faf_atro_present)
+table(data8$faf_atro_present)
+data8$faf_atro_present=relevel(data8$faf_atro_present, ref = "No")
+
+
+model1<- gee(carrier ~ faf_atro_present + age + sex_E1_C1 + ASMULTIMODALORRES_O, 
+             data = data8, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ faf_atro_present + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data8, id = StudySubjectID, 
+                   family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+ 
+ QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data8)
+
+ric=roc(carrier~model1_1$fitted.values, data = data8, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ faf_atro_present + age + sex_E1_C1 + ASMULTIMODALORRES_O +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho), 
+#                    data = data8, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM)
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+ 
+```
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+################################### variavel com 38 NAs #################################
+
+#model1<- gee(carrier ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#            bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + faf_retdr_total_area,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+# summary(model1)
+
+
+
+#model1_1 <- geeglm(carrier ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#                  bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + faf_retdr_total_area,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+# summary(model1_1)
+```
+
+
+
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+############################## 7 NAs #####################################
+
+## Ordens da dra: tirar os NAs para examinar esta variavel ###
+
+data9 <- data7[!is.na(data7$reti_t_c_sub),]
+
+model1<- gee(carrier ~ age + sex_E1_C1 +  ASMULTIMODALORRES_O + reti_t_c_sub,
+             data = data9, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ age + sex_E1_C1 + ASMULTIMODALORRES_O + reti_t_c_sub,
+             data = data9, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+ summary(model1_1)
+ 
+ #odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+```
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+
+data7$reti_patho_dr_o=as.factor(data7$reti_patho_dr_o)
+table(data7$reti_patho_dr_o)
+data7$reti_patho_dr_o=relevel(data7$reti_patho_dr_o, ref = "No")
+
+
+model1<- gee(carrier ~ reti_patho_dr_o + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+            data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ reti_patho_dr_o + age + sex_E1_C1 +  ASMULTIMODALORRES_O ,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+```
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+############################### 51 NA #######################################
+## Ordens da dra. retirar da analise
+
+
+#model1<- gee(variantes ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#            bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + reti_patho_dr_d_w_c,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+#summary(model1)
+
+
+
+#model1_1 <- geeglm(variantes ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#            bmi_E1_C1 + ASMULTIMODALORRES_E1_C18 + reti_patho_dr_d_w_c,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+#summary(model1_1)
+```
+
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+############ reti_patho_ped ################
+
+data7$reti_patho_ped=as.factor(data7$reti_patho_ped)
+table(data7$reti_patho_ped)
+data7$reti_patho_ped=relevel(data7$reti_patho_ped, ref = "No")
+
+model1<- gee(carrier ~ reti_patho_ped + age + sex_E1_C1 + ASMULTIMODALORRES_O ,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+table(data7$reti_patho_ped)
+data7$reti_patho_ped
+model1_1 <- geeglm(carrier ~ reti_patho_ped + age + sex_E1_C1 + 
+                     ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+ table(data7$reti_patho_ped)
+```
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+############################### 1 NA #######################################
+## ordens da Dra. do estudo apos analisar os exames
+# Suj.  == No
+
+data7$reti_patho_hyp_c_ret=as.factor(data7$reti_patho_hyp_c_ret)
+table(data7$reti_patho_hyp_c_ret)
+data7$data7$reti_patho_hyp_c_ret=relevel(data7$reti_patho_hyp_c_ret, ref = "No")
+
+
+model1<- gee(carrier ~ age + sex_E1_C1 +  ASMULTIMODALORRES_O + 
+              reti_patho_hyp_c_ret,
+           data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ age + sex_E1_C1 + ASMULTIMODALORRES_E1_C18 + 
+                     reti_patho_hyp_c_ret,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+############################ GLMM #######################################
+GLM = glmer(formula = carrier ~ ASMULTIMODALORRES_O + age + sex_E1_C1 + reti_patho_hyp_c_ret +
+                    (1 | StudySubjectID)+(1 | StudySubjectID:olho), 
+                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+summary(GLM)
+
+exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+```
+
+
+````{r,echo=FALSE,message=FALSE,warning=F}
+
+############################### 1 NA #######################################
+## Ordens da Dra Claudia 
+# Suj. 109011935 == Not applicable
+
+# Codificamos esta variavel como presente ou nao presente de CNV com o left_join das 2 BD CNV_OD/OS obtendo uma variavel nova CNV
+
+############################################################################
+#model1<- gee(carrier ~ phen_exsu_amd + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+#            data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#           corstr ="independence",na.action = na.omit)
+
+#summary(model1)
+
+
+
+#model1_1 <- geeglm(carrier ~ phen_exsu_amd + age + sex_E1_C1 +  ASMULTIMODALORRES_O,
+#             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+#             corstr ="independence",na.action = na.omit)
+
+#summary(model1_1)
+###########################################################################
+
+
+# Analise com a nova variavel presença ou nao presença de CNV
+
+data7$CNV=as.factor(data7$CNV)
+table(data7$CNV)
+data7$CNV=relevel(data7$CNV,ref="No")
+
+
+model1<- gee(carrier ~ age + sex_E1_C1 +  ASMULTIMODALORRES_O + CNV,
+           data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ age + sex_E1_C1 +  ASMULTIMODALORRES_O + CNV,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+```
+
+
+###### variavel main_loc_2 ######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+# A variavel main_loc_1 tem somente zeros
+
+model1<- gee(carrier ~ main_loc_2 + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ main_loc_2 + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ age + sex_E1_C1 + ls_smoker_E1_C6 +
+#                  ASMULTIMODALORRES_E1_C18 +  main_loc_2  +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = #na.omit)
+ 
+#summary(GLM)
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+####### Area de baixo da curva para modelo GLMM ########
+#library(caret)
+
+#data7$pdata <- as.factor(
+#    ifelse(
+#        predict(GLM, 
+#                newdata = data7, 
+#                type = "response")
+#        >0.5,"1","0"))
+
+#confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+
+#roc1=plot.roc(as.factor(data7$carrier),fitted(GLM))
+
+#roc(data7$carrier,fitted(GLM), data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+
+
+```
+
+
+####### variavel main_loc_3#######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~ main_loc_3 + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ main_loc_3 + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ age +   main_loc_3  +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = #na.omit)
+ 
+#summary(GLM) # o modelo convergiu só tirando as covariaveis sexo, smoker,e AMDstage
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+####### Area de baixo da curva para modelo GLMM ########
+#library(caret)
+
+#data7$pdata <- as.factor(
+#    ifelse(
+#        predict(GLM, 
+#                newdata = data7, 
+#                type = "response")
+#        >0.5,"1","0"))
+
+#confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+
+#roc1=plot.roc(as.factor(data7$carrier),fitted(GLM))
+
+#roc(data7$carrier,fitted(GLM), data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+#fitted(GLM)
+#fitted.values(GLM)
+
+#auc(carrier~fitted.values(GLM), data = data7)
+
+```
+
+
+
+###### variavel main_loc_4 ##################
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+
+model1<- gee(carrier ~ main_loc_4_ + age + sex_E1_C1 + ASMULTIMODALORRES_O ,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ main_loc_4_ + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+########### GLMM #############################################
+#GLM = glmer(formula = carrier ~ age  +  main_loc_4_  +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = #na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+```
+
+
+###### variavel main_loc_4a #######################333
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+
+model1<- gee(carrier ~ main_loc_4a + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ main_loc_4a + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  main_loc_4a +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = #na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+############################ variavel main_loc_4b tem somente zeros ######################
+
+```
+
+
+######## variavel Total area central subf. #######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+### Unstructured 
+modUn<- gee(carrier ~ s_Drus_sf1_Total_Area_1 + ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="unstructured",na.action = na.omit)
+
+summary(modUn) # na inferencia estatistica o modelo nao corre
+
+### Exchangable (or Compund Symmetry)
+modEx= gee(carrier ~ s_Drus_sf1_Total_Area_1 + ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="exchangeable",na.action = na.omit)
+
+summary(modEx)
+
+## Independence
+modInd= gee(carrier ~ s_Drus_sf1_Total_Area_1 + ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(modInd)
+
+
+
+
+model1_1 <- geeglm(carrier ~ s_Drus_sf1_Total_Area_1 + age + sex_E1_C1  + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=Estimate-1.96*Std.err,
+           upr=Estimate+1.96*Std.err))
+rownames(citab) <- rownames(cc)
+exp(citab)
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+
+######## GLMM ###########################
+#GLM = glmer(formula = carrier ~ age  + sex_E1_C1 + s_Drus_sf1_Total_Area_1_+
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis smoking e  AMD satge
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+################ inner circle #####################
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+### Unstructured 
+#modUn<- gee(carrier ~ inner_circle + ASMULTIMODALORRES_O + age + sex_E1_C1,
+#             data = data7, id = StudySubjectID, 
+#             family=binomial(link="logit"),
+#             corstr ="unstructured",na.action = na.omit)
+
+#summary(modUn) # nao converge
+
+### Exchangable (or Compund Symmetry)
+#modEx= gee(carrier ~ inner_circle + ASMULTIMODALORRES_O + age + sex_E1_C1,
+#             data = data7, id = StudySubjectID, 
+#             family=binomial(link="logit"),
+#             corstr ="exchangeable",na.action = na.omit)
+
+#summary(modEx) # o modelo nao converge
+
+## Independence
+modInd= gee(carrier ~ inner_circle + ASMULTIMODALORRES_O + age + sex_E1_C1,
+             data = data7, id = StudySubjectID, 
+             family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(modInd)
+
+
+model1_1 <- geeglm(carrier ~ inner_circle + age + sex_E1_C1  + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+
+
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+cc
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) # estranho o IC contem o 1 mas a variavel é significativa
+
+
+
+##### Calcular area de baixo da curva #########
+auc(carrier~model1_1$fitted.values, data = data7)
+
+
+ric=roc(carrier~model1_1$fitted.values, data = data7, plot = TRUE, main = "ROC CURVE", col= "blue")
+
+ric
+
+ci.auc(ric)
+
+### outro metodo de ver a area e ver os dados sensibilidade e especifidade ######
+data7$pdata <- as.factor(
+    ifelse(
+        predict(model1_1, 
+                newdata = data7, 
+                type = "response")
+        >0.5,"1","0"))
+
+confusionMatrix(data7$pdata, as.factor(data7$carrier), positive="1")
+
+roc1=plot.roc(data7$carrier,fitted(model1_1))
+roc1
+
+############################ GLMM #####################################
+#GLM = glmer(formula = carrier ~ age  + sex_E1_C1 +  inner_circle +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis smoking e  AMD satge
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+```
+
+
+
+######## variavel outer circle ########
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~ outer_circle_ + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ outer_circle_ + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  outer_circle_ +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+```
+
+
+####### variavel present drusen ######
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+
+model1<- gee(carrier ~ present_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ present_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  present_drusen +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+
+##### morphology_absent#####
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~ morph_absente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ morph_absente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  morph_absente +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+### morph_hard_drusen ###
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  morph_hard_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  morph_hard_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data7, id = StudySubjectID, 
+                   family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  morph_hard_drusen +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+
+```
+
+
+### variavel morph_intermediate ###
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  morph_intermed + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  morph_intermed + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  morph_intermed +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+#### variavel morph_large ####
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  morph_large + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  morph_large + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  morph_large +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+### predominant_absente ###
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  predominant_absente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  + predominant_absente + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data7, id = StudySubjectID, 
+                   family=binomial(link="logit"),corstr ="independence",
+                   na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  predominant_absente +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+### predominant hard drusen ###
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~ predominant_hard_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ predominant_hard_drusen + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data7, id = StudySubjectID, 
+                   family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  predominant_hard_drusen +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+#### predominant intermediate ####
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  predominant_intermed + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  predominant_intermed + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data7, id = StudySubjectID, 
+                   family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  predominant_intermed +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+#### predominant_large ####
+```{r,echo=FALSE, message=F,warning=FALSE}
+
+model1<- gee(carrier ~  predominante_large + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  predominante_large + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+                   data = data7, id = StudySubjectID, 
+                   family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  predominante_large +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+
+```
+
+
+##### variavel hyperpig_present ####
+```{r,echo=FALSE,message=FALSE,warning=F}
+
+model1<- gee(carrier ~  hyperpig_present + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~  hyperpig_present + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  + hyperpig_present  +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+############################## hypopig_present ###############################
+```{r,echo=FALSE, message=F,warning=FALSE}
+
+model1<- gee(carrier ~  hypopig_present + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1)
+
+
+
+model1_1 <- geeglm(carrier ~ hypopig_present + age + sex_E1_C1 + ASMULTIMODALORRES_O,
+             data = data7, id = StudySubjectID, family=binomial(link="logit"),
+             corstr ="independence",na.action = na.omit)
+
+summary(model1_1)
+QIC(model1_1)
+
+#odds ratio
+exp(model1_1$coefficients) 
+#95% IC for the coefficients
+cc <- coef(summary(model1_1))
+citab <- with(as.data.frame(cc),
+     cbind(lwr=(Estimate-1.96*Std.err),
+           upr=(Estimate+1.96*Std.err)))
+rownames(citab) <- rownames(cc)
+exp(citab) #
+
+######### GLMM ###########################################
+#GLM = glmer(formula = carrier ~ age  +  hypopig_present +
+#                    (1 | StudySubjectID)+(1 | StudySubjectID:olho_), 
+#                    data = data7, family=binomial(link=logit),na.action = na.omit)
+ 
+#summary(GLM) # modelo convergiu so se tirar as covariaveis
+
+#exp(cbind(OR=fixef(GLM), Confint(GLM)))
+
+```
+
+
+
+
+
